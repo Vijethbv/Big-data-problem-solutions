@@ -1,0 +1,184 @@
+Question : Extract all the articles under a given category ( has to preprocess data like removing most occurring words and least occurring words )
+
+Sub Question : Find the Jaccard similarity between articles
+
+Solution: 
+
+
+---------------------------------------------------------------------------------------------------------------------------
+Working Code
+---------------------------------------------------------------------------------------------------------------------------
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+
+public class jaccardSimilarity {
+	static ArrayList<String> stopwords= new ArrayList<>();
+	
+	public static void loadStopWords(String path){
+		try {
+			String word= "";
+			File f= new File(path);
+			BufferedReader reader= new BufferedReader(new FileReader(f));
+			while((word= reader.readLine()) != null)
+				stopwords.add(word);
+			reader.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public static class Sim_Mapper1 extends Mapper<Object, Text, Text, Text>{
+		Text text= new Text();
+		@Override
+		protected void map(Object key, Text value, Mapper<Object, Text, Text, Text>.Context context)
+				throws IOException, InterruptedException {
+				String words[]= value.toString().split(" ");
+				for(String element: words){
+					String e= element.trim().replaceAll("[<>\\[\\],?=/;:./%-()[0-9]\"]", "");
+					if(!stopwords.contains(e.toLowerCase()) && e.length() > 2){
+						text.set(e.toLowerCase());
+						context.write(text,new Text("s1"));
+					}
+				}
+		}
+	}
+
+	public static class Sim_Mapper2 extends Mapper<Object, Text, Text, Text>{
+		Text text= new Text();
+		@Override
+		protected void map(Object key, Text value, Mapper<Object, Text, Text, Text>.Context context)
+				throws IOException, InterruptedException {
+				String words[]= value.toString().split(" ");
+				for(String element: words){
+					String e= element.trim().replaceAll("[<>\\[\\],?=/\\t;:./%-()[0-9]\"]", "");
+					if(!stopwords.contains(e.toLowerCase()) && e.length() > 2){
+						text.set(e.toLowerCase());
+						context.write(text,new Text("s2"));
+					}
+				}
+		}
+	}
+	
+	public static class Sim_Reducer extends Reducer<Text, Text, Text, Text>{
+		@Override
+		protected void reduce(Text arg0, Iterable<Text> arg1, Context context)
+				throws IOException, InterruptedException {
+			String total_string= "";
+			Text text= new Text();
+			boolean flag= false, flag1= false;
+			for(Text t: arg1){
+				if(t.toString().equals("s1") && !flag){
+					total_string+= t.toString() + ",";
+					flag= true;
+				}
+				else if(t.toString().equals("s2") && !flag1){
+					total_string+= t.toString() + ",";
+					flag1= true;
+				}
+			}
+			
+			text.set(arg0.toString() + "->" + total_string.substring(0, total_string.length()-1));
+			context.write(text, new Text());
+		}
+	}
+	
+	public static class Similarity_Mapper extends Mapper<Object, Text, Text, Text>{
+		Text k= new Text();
+		Text v= new Text("1");
+		@Override
+		protected void map(Object key, Text value, Context context)
+				throws IOException, InterruptedException {
+			String[] key_val= value.toString().split("->");
+			k.set(key_val[1]);
+			context.write(k,v);
+		}
+	}
+
+	public static class Similarity_Combiner extends Reducer<Text, Text, Text, Text>{
+		Text key= new Text();
+		Text value= new Text();
+		@Override
+		protected void reduce(Text arg0, Iterable<Text> arg1,Context context) throws IOException, InterruptedException {
+			int count= 0;
+			for(Text i: arg1)
+				count+= 1;
+			key.set("similarity");
+			value.set(count + "-" + arg0.toString());
+			context.write(key, value);
+		}
+	}
+	
+	public static class Similarity_Reducer extends Reducer<Text, Text, Text, Text>{
+		
+		@Override
+		protected void reduce(Text arg0, Iterable<Text> arg1,Context context) throws IOException, InterruptedException {
+			float ratio= 0.0f;
+			float intersection= 0.0f;
+			float union= 0.0f;
+			for(Text value: arg1){
+				String[] type= value.toString().split("-");
+				System.out.println(type[1]);
+				if(type[1].contains("s1,s2"))
+					intersection+= Float.valueOf(type[0]);
+				else if(type[1].contains("s2,s1"))
+					intersection+= Float.valueOf(type[0]);
+				else
+					union= intersection + Float.valueOf(type[0]); 
+			}
+			context.write(new Text("Union: "),  new Text(String.valueOf(union)));
+			context.write(new Text("Intersection: "),  new Text(String.valueOf(intersection)));
+			context.write(new Text("Similarity ratio: "),  new Text(String.valueOf(intersection / union)));
+		}
+	}
+	
+	public static void main(String[] args) throws ClassNotFoundException, InterruptedException{
+		try {
+			loadStopWords("/home/vijeth/Desktop/stopwords.txt");
+			Configuration conf= new Configuration();
+			Job job= Job.getInstance(conf,"Jacard Similarity");
+			job.setJarByClass(jaccardSimilarity.class);
+			job.setMapperClass(Sim_Mapper1.class);
+			job.setMapperClass(Sim_Mapper2.class);
+			job.setReducerClass(Sim_Reducer.class);
+			job.setMapOutputKeyClass(Text.class);
+			job.setMapOutputValueClass(Text.class);
+			job.setOutputKeyClass(Text.class);
+			job.setOutputValueClass(Text.class);
+			MultipleInputs.addInputPath(job, new Path("/home/vijeth/Desktop/text.txt"),TextInputFormat.class,Sim_Mapper1.class);
+			MultipleInputs.addInputPath(job, new Path("/home/vijeth/Desktop/text1.txt"),TextInputFormat.class,Sim_Mapper2.class);
+			FileOutputFormat.setOutputPath(job, new Path("./out"));
+			job.waitForCompletion(true);
+			
+			Job job1= Job.getInstance(conf,"FJacard Similarity");
+			job1.setJarByClass(jaccardSimilarity.class);
+			job1.setMapperClass(Similarity_Mapper.class);
+			job1.setCombinerClass(Similarity_Combiner.class);
+			job1.setReducerClass(Similarity_Reducer.class);
+			job1.setMapOutputKeyClass(Text.class);
+			job1.setMapOutputValueClass(Text.class);
+			job1.setOutputKeyClass(Text.class);
+			job1.setOutputValueClass(Text.class);
+			FileInputFormat.addInputPath(job1, new Path("./out/part-r-00000"));
+		    FileOutputFormat.setOutputPath(job1, new Path("./similarity"));
+			System.exit(job1.waitForCompletion(true) ? 0 : 1);
+			
+		} catch (IOException e) {
+			System.out.println("Error in main: " + e.getMessage());
+			e.printStackTrace();
+		}
+	}
+}
