@@ -1,0 +1,85 @@
+Question : Join : perform join on two relations
+
+
+Solutions :
+
+---------------------------------------------------------------------------------------------------------------------------
+Working Code - modify the path to the input file
+---------------------------------------------------------------------------------------------------------------------------
+import java.io.IOException;
+import java.util.ArrayList;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class Join {
+	
+	
+	public static class JoinMapper1 extends Mapper<Object, Text, IntWritable, Text>{
+		private IntWritable in= new IntWritable();
+		public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+			in.set(Integer.parseInt(value.toString().split(",")[0]));
+			context.write(in, value);
+			System.out.println("");
+		}
+	}
+
+	public static class JoinMapper2 extends Mapper<Object, Text, IntWritable, Text>{
+		private IntWritable in= new IntWritable();
+		public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+			in.set(Integer.parseInt(value.toString().split(",")[1]));
+			context.write(in, value);
+		}
+	}
+
+
+	public static class JoinReducer extends Reducer<IntWritable,Text ,Text,Text> {
+
+		public void reduce(IntWritable key, Iterable<Text> values,Context context) throws IOException, InterruptedException {
+			Text k = null;
+			ArrayList<Text> val= new ArrayList<>();
+			for (Text value : values) {
+				if(value.toString().split(",").length == 3) 
+					k= new Text(value.toString());
+				else 
+					val.add(new Text(value.toString()));
+				
+			}
+			if(k == null) return;
+			try {
+				for(Text v : val) {
+					context.write(k, v);
+				}
+			} catch (Exception e) {}
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		Configuration conf = new Configuration();
+		Job job = Job.getInstance(conf, "union");
+
+		MultipleInputs.addInputPath(job, new Path("datafiles/join/movies.csv"), TextInputFormat.class, JoinMapper1.class);
+		MultipleInputs.addInputPath(job, new Path("datafiles/join/ratings.csv"), TextInputFormat.class, JoinMapper2.class);
+
+		job.setJarByClass(Join.class);
+		job.setReducerClass(JoinReducer.class);
+
+		job.setMapOutputKeyClass(IntWritable.class);
+		job.setMapOutputValueClass(Text.class);
+
+		job.setOutputKeyClass(Text.class);
+		job.setOutputValueClass(Text.class);
+
+
+		FileOutputFormat.setOutputPath(job, new Path("datafiles/join/output"));
+		System.exit(job.waitForCompletion(true) ? 0 : 1);
+	}
+}
