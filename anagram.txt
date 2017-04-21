@@ -1,0 +1,67 @@
+Question : Anagram : Rearranging the letters of a word or phrase to produce a new word or phrase, using all the original letters exactly once; for example, the word ‘anagram’ can be rearranged into ‘ramagan’
+
+Write a program that does anagram checking.
+
+
+Solution:
+
+---------------------------------------------------------------------------------------------------------------------------
+Working Code - modify the path to the input file
+---------------------------------------------------------------------------------------------------------------------------
+import java.io.IOException;
+import java.util.Arrays;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class Anagram {	
+	
+	public static class AnaMapper extends Mapper<Object, Text, Text, Text> {
+		
+		private Text sorted= new Text();
+		private Text word= new Text();
+		
+		public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+			char arr[]= value.toString().toLowerCase().toCharArray();
+			Arrays.sort(arr);
+			sorted.set(new String(arr));
+			word.set(value.toString());
+			context.write(sorted, word);
+			System.out.println("");
+		}
+	}
+	
+	public static class AnaReducer extends Reducer<Text, Text, Text, Text> {
+		private Text anagrams= new Text();
+		public void reduce(Text key, Iterable<Text> value, Context context) throws IOException, InterruptedException {
+			StringBuffer buffer= new StringBuffer();
+			for(Text val : value) {
+				buffer.append(val.toString() + ", ");
+			}
+			anagrams.set(buffer.toString());
+			context.write(key, anagrams);
+		}
+	}
+	
+	public static void main(String[] args) throws Exception {
+		Configuration conf = new Configuration();
+	    Job job = Job.getInstance(conf, "Anagram");
+	    job.setJarByClass(Anagram.class);
+	    job.setMapperClass(AnaMapper.class);
+	    job.setCombinerClass(AnaReducer.class);
+	    job.setReducerClass(AnaReducer.class);
+	    
+	    job.setOutputKeyClass(Text.class);
+	    job.setOutputValueClass(Text.class);
+	    
+	    FileInputFormat.addInputPath(job, new Path("datafiles/anagram/anagram_input.txt"));
+	    FileOutputFormat.setOutputPath(job, new Path("datafiles/anagram/output"));
+	    System.exit(job.waitForCompletion(true) ? 0 : 1);
+	}
+}
