@@ -1,0 +1,72 @@
+Projection : projection is defined as the set obtained when the components of the tuple are restricted to the set – it discards (or excludes) the other attributes
+
+
+
+Solution :
+
+
+---------------------------------------------------------------------------------------------------------------------------
+Working Code - modify the path to the input file
+---------------------------------------------------------------------------------------------------------------------------
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Scanner;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class Projection {
+	
+	  public static ArrayList<Integer> indexlist= new ArrayList<Integer>();
+	  
+	  
+	  public static class ProjectionMapper extends Mapper<Object, Text, Text, Text>{
+		  private Text word= new Text();
+		  String str= "";
+		  public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+			  String[] columns= value.toString().split(",");
+			  for(int i= 0;i < indexlist.size();i++)
+				  str+= columns[indexlist.get(i)] + ",";
+			  word.set(str);
+			  context.write(word, word);
+			  str= "";
+		  }
+	  }
+	  
+	  
+	  public static class ProjectionReducer extends Reducer<Text,Text,Text,Text> {
+		    public void reduce(Text key,Context context) 
+		    	throws IOException, InterruptedException {
+		      context.write(key, key);
+		    }
+	  }
+	  
+	  
+	  public static void main(String[] args) throws Exception {
+		  	//Setting which columns to project.
+		  	indexlist.add(0);
+		  	indexlist.add(1);
+		//  	indexlist.add(2);
+		//  	indexlist.add(3);
+		  	
+		    Configuration conf = new Configuration();
+		    Job job = Job.getInstance(conf, "Projection");
+		    job.setJarByClass(Projection.class);
+		    job.setMapperClass(ProjectionMapper.class);
+		    job.setCombinerClass(ProjectionReducer.class);
+		    job.setReducerClass(ProjectionReducer.class);
+		    job.setOutputKeyClass(Text.class);
+		    job.setOutputValueClass(Text.class);
+		    FileInputFormat.addInputPath(job, new Path("datafiles/projection/test.csv"));
+		    FileOutputFormat.setOutputPath(job, new Path("datafiles/projection/output"));
+		    System.exit(job.waitForCompletion(true) ? 0 : 1);
+		  }
+	}
